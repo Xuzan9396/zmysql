@@ -111,23 +111,17 @@ func WithDebug() func(*MySQLClient) {
 // debugLog 打印 SQL 语句和参数
 func (client *MySQLClient) debugLog(query string, args ...any) {
 	if client.debug {
-		//zlog.F().Infof("sql:%s,args:%v", query, args)
 
 		// 将args中的每个元素转换为字符串，并用逗号分隔
 		var argsStr []string
 		for _, arg := range args {
-			// 对每个参数进行格式化，如果是nil就打印 "NULL"，否则使用 fmt.Sprintf 格式化
-			//if arg == nil {
-			//	argsStr = append(argsStr, "NULL")
-			//} else {
 			argsStr = append(argsStr, fmt.Sprintf("%v", arg))
-			//}
 		}
 		// 将argsStr中的元素用逗号连接成一个字符串
 		argsJoined := strings.Join(argsStr, ", ")
 
 		// 打印 SQL 语句和格式化后的参数
-		zlog.F().Infof("sql:%s, args:[%s]", query, argsJoined)
+		zlog.F("sql").Infof("sql:%s, args:[%s]", query, argsJoined)
 	}
 }
 
@@ -155,7 +149,6 @@ func (c *MySQLClient) getFieldsMapping(t reflect.Type) map[string]int {
 }
 
 // Find 执行查询并将结果映射到结构体中 列表查询
-// 该方法将数据库查询结果映射到传入的目标切片结构体中。
 func (client *MySQLClient) Find(dest any, query string, args ...any) error {
 	// 检查目标参数 dest 是否是指向切片的指针
 	client.debugLog(query, args...)
