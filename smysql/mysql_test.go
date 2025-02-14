@@ -1,9 +1,9 @@
-package zmysql_test
+package smysql_test
 
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/Xuzan9396/zmysql"
+	"github.com/Xuzan9396/zmysql/smysql"
 	"log"
 	"testing"
 	"time"
@@ -38,11 +38,11 @@ func (t *MyTime) Scan(value interface{}) error {
 func TestQuery(t *testing.T) {
 	// 创建 MySQL 客户端
 	// 美国时区 America/New_York
-	err := zmysql.NewMySQLClient("root", "123456", "127.0.0.1:3326", "weather", zmysql.WithLoc("America/New_York"), zmysql.WithDebug())
+	client, err := smysql.NewMySQLClient("root", "123456", "127.0.0.1:3326", "weather", smysql.WithLoc("America/New_York"), smysql.WithDebug())
 	if err != nil {
 		log.Fatalf("failed to create MySQL client: %v", err)
 	}
-	defer zmysql.Close()
+	defer client.Close()
 
 	type CityInfo struct {
 		Name       string  `db:"city_name"`
@@ -54,7 +54,7 @@ func TestQuery(t *testing.T) {
 	}
 	// 查询数据
 	var cities []CityInfo
-	err = zmysql.Find(&cities, "SELECT  name as city_name, latitude, longitude,created_at FROM cities WHERE id = ? limit 5", 1)
+	err = client.Find(&cities, "SELECT  name as city_name, latitude, longitude,created_at FROM cities WHERE id = ? limit 5", 1)
 	if err != nil {
 		log.Fatalf("error querying cities: %v", err)
 	}
@@ -70,11 +70,11 @@ func TestQuery(t *testing.T) {
 
 func TestFirst(t *testing.T) {
 	// 创建 MySQL 客户端
-	err := zmysql.NewMySQLClient("root", "123456", "127.0.0.1:3326", "weather")
+	client, err := smysql.NewMySQLClient("root", "123456", "127.0.0.1:3326", "weather")
 	if err != nil {
 		log.Fatalf("failed to create MySQL client: %v", err)
 	}
-	defer zmysql.Close()
+	defer client.Close()
 
 	type CityInfo struct {
 		Name       string  `db:"city_name"`
@@ -85,7 +85,7 @@ func TestFirst(t *testing.T) {
 	}
 	// 查询数据
 	var cities CityInfo
-	bools, err := zmysql.First(&cities, "SELECT  name as city_name, latitude, longitude FROM cities WHERE id = ? limit 1", 1)
+	bools, err := client.First(&cities, "SELECT  name as city_name, latitude, longitude FROM cities WHERE id = ? limit 1", 1)
 	if err != nil {
 		log.Fatalf("error querying cities: %v", err)
 	}
@@ -102,11 +102,11 @@ func TestFirst(t *testing.T) {
 
 func TestMySQLClient_FindMultiple(t *testing.T) {
 	// 创建 MySQL 客户端
-	err := zmysql.NewMySQLClient("root", "123456", "127.0.0.1:3326", "weather")
+	client, err := smysql.NewMySQLClient("root", "123456", "127.0.0.1:3326", "weather")
 	if err != nil {
 		log.Fatalf("failed to create MySQL client: %v", err)
 	}
-	defer zmysql.Close()
+	defer client.Close()
 
 	type CityInfo struct {
 		Name       string  `db:"name"`
@@ -126,7 +126,7 @@ func TestMySQLClient_FindMultiple(t *testing.T) {
 	var cities []CityInfo
 	var mings Ming
 	var total Total
-	err = zmysql.FindMultipleProc([]any{
+	err = client.FindMultipleProc([]any{
 		&cities,
 		&total,
 		&mings,
@@ -142,19 +142,19 @@ func TestMySQLClient_FindMultiple(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	// 创建 MySQL 客户端
-	err := zmysql.NewMySQLClient("root", "123456", "127.0.0.1:3326", "weather", zmysql.WithDebug())
+	client, err := smysql.NewMySQLClient("root", "123456", "127.0.0.1:3326", "weather", smysql.WithDebug())
 	if err != nil {
 		log.Fatalf("failed to create MySQL client: %v", err)
 	}
-	defer zmysql.Close()
+	defer client.Close()
 
-	bools, err := zmysql.Exec("UPDATE cities SET created_at = ?,wikiDataId = ? WHERE id = ?", "2025-02-13 11:49:36", nil, 1)
+	bools, err := client.Exec("UPDATE cities SET created_at = ?,wikiDataId = ? WHERE id = ?", "2025-02-13 11:49:36", nil, 1)
 	if err != nil {
 		log.Fatalf("error updating cities: %v", err)
 	}
 	t.Log(bools)
 
-	bools, err = zmysql.Exec("insert into cities (name, latitude, longitude, created_at,state_id,state_code,country_id,country_code) values (?, ?, ?, ?,?,?,?,?)", "test", 1.1, 1.1, "2025-02-13 11:49:36", 1, "223", 1, "zh")
+	bools, err = client.Exec("insert into cities (name, latitude, longitude, created_at,state_id,state_code,country_id,country_code) values (?, ?, ?, ?,?,?,?,?)", "test", 1.1, 1.1, "2025-02-13 11:49:36", 1, "223", 1, "zh")
 	if err != nil {
 		log.Fatalf("error updating cities: %v", err)
 	}

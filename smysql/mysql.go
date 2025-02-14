@@ -1,4 +1,4 @@
-package zmysql
+package smysql
 
 import (
 	"database/sql"
@@ -28,10 +28,8 @@ type MySQLClient struct {
 	fields map[reflect.Type]map[string]int // Type -> {column name -> field index}
 }
 
-var mysql_client *MySQLClient
-
 // 创建并初始化一个新的 MySQL 客户端
-func NewMySQLClient(username, password, addr, dbName string, opts ...func(*MySQLClient)) error {
+func NewMySQLClient(username, password, addr, dbName string, opts ...func(*MySQLClient)) (*MySQLClient, error) {
 
 	// 创建默认的 MySQL 客户端
 	client := &MySQLClient{
@@ -56,7 +54,7 @@ func NewMySQLClient(username, password, addr, dbName string, opts ...func(*MySQL
 	// 打开数据库连接
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return fmt.Errorf("failed to open database: %v", err)
+		return nil, fmt.Errorf("failed to open database: %v", err)
 	}
 
 	// 设置连接池参数
@@ -70,10 +68,9 @@ func NewMySQLClient(username, password, addr, dbName string, opts ...func(*MySQL
 		log.Fatalf("数据库连接失败ping:%v", err)
 	}
 	client.DB = db
-	mysql_client = client
 
 	// 返回客户端实例
-	return nil
+	return client, nil
 }
 
 // 设置连接最大生命周期
@@ -152,9 +149,9 @@ func (c *MySQLClient) getFieldsMapping(t reflect.Type) map[string]int {
 }
 
 // Find 执行查询并将结果映射到结构体中 列表查询
-func Find(dest any, query string, args ...any) error {
+func (client *MySQLClient) Find(dest any, query string, args ...any) error {
 	// 检查目标参数 dest 是否是指向切片的指针
-	mysql_client.debugLog(query, args...)
+	client.debugLog(query, args...)
 	destValue := reflect.ValueOf(dest)
 	// 目标类型需要是指向切片的指针
 	if destValue.Kind() != reflect.Ptr || destValue.Elem().Kind() != reflect.Slice {
@@ -165,7 +162,7 @@ func Find(dest any, query string, args ...any) error {
 	sliceElemType := destValue.Elem().Type().Elem()
 
 	// 使用预处理来避免重复解析 SQL 查询
-	stmt, err := mysql_client.DB.Prepare(query)
+	stmt, err := client.DB.Prepare(query)
 	if err != nil {
 		return fmt.Errorf("failed to prepare query: %v", err)
 	}
@@ -185,7 +182,7 @@ func Find(dest any, query string, args ...any) error {
 	}
 
 	// 获取字段映射缓存（假设有一个缓存用于存储列名与结构体字段索引的映射）
-	fieldsMapping := mysql_client.getFieldsMapping(sliceElemType)
+	fieldsMapping := client.getFieldsMapping(sliceElemType)
 
 	// 预分配内存，创建一个空的目标切片 创建一个类型为 []CityInfo，但长度和容量都为 0 的切片
 	results := reflect.MakeSlice(destValue.Elem().Type(), 0, 0)
@@ -237,8 +234,8 @@ func Find(dest any, query string, args ...any) error {
 	return nil
 }
 
-func FindProc(dest any, procName string, args ...any) error {
-	mysql_client.debugLog(procName, args...)
+func (client *MySQLClient) FindProc(dest any, procName string, args ...any) error {
+	client.debugLog(procName, args...)
 
 	// 检查目标参数 dest 是否是指向切片的指针
 	destValue := reflect.ValueOf(dest)
@@ -253,7 +250,7 @@ func FindProc(dest any, procName string, args ...any) error {
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")
 	query := fmt.Sprintf("CALL `%s`(%s)", procName, placeholders) // 使用预处理来避免重复解析 SQL 查询
 
-	stmt, err := mysql_client.DB.Prepare(query)
+	stmt, err := client.DB.Prepare(query)
 	if err != nil {
 		return fmt.Errorf("failed to prepare query: %v", err)
 	}
@@ -273,7 +270,7 @@ func FindProc(dest any, procName string, args ...any) error {
 	}
 
 	// 获取字段映射缓存（假设有一个缓存用于存储列名与结构体字段索引的映射）
-	fieldsMapping := mysql_client.getFieldsMapping(sliceElemType)
+	fieldsMapping := client.getFieldsMapping(sliceElemType)
 
 	// 预分配内存，创建一个空的目标切片 创建一个类型为 []CityInfo，但长度和容量都为 0 的切片
 	results := reflect.MakeSlice(destValue.Elem().Type(), 0, 0)
@@ -326,8 +323,8 @@ func FindProc(dest any, procName string, args ...any) error {
 }
 
 // 执行查询并将结果映射到结构体中，查询一条数据
-func First(dest any, query string, args ...any) (bool, error) {
-	mysql_client.debugLog(query, args...)
+func (client *MySQLClient) First(dest any, query string, args ...any) (bool, error) {
+	client.debugLog(query, args...)
 
 	// 检查目标参数 dest 是否是指向结构体的指针
 	destValue := reflect.ValueOf(dest)
@@ -340,7 +337,7 @@ func First(dest any, query string, args ...any) (bool, error) {
 	structType := destValue.Elem().Type()
 
 	// 使用预处理来避免重复解析 SQL 查询
-	stmt, err := mysql_client.DB.Prepare(query)
+	stmt, err := client.DB.Prepare(query)
 	if err != nil {
 		return false, fmt.Errorf("failed to prepare query: %v", err)
 	}
@@ -360,7 +357,7 @@ func First(dest any, query string, args ...any) (bool, error) {
 	}
 
 	// 获取字段映射缓存（假设有一个缓存用于存储列名与结构体字段索引的映射）
-	fieldsMapping := mysql_client.getFieldsMapping(structType)
+	fieldsMapping := client.getFieldsMapping(structType)
 
 	// 创建扫描目标数组，用于存放每一列的值
 	scanDest := make([]any, len(columns))
@@ -405,8 +402,8 @@ func First(dest any, query string, args ...any) (bool, error) {
 	return true, nil
 }
 
-func FindMultipleProc(dest []any, procName string, args ...any) error {
-	mysql_client.debugLog(procName, args...)
+func (client *MySQLClient) FindMultipleProc(dest []any, procName string, args ...any) error {
+	client.debugLog(procName, args...)
 
 	// 检查目标参数 dest 是否是包含切片或结构体指针的切片
 	if len(dest) == 0 {
@@ -415,7 +412,7 @@ func FindMultipleProc(dest []any, procName string, args ...any) error {
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")
 	query := fmt.Sprintf("CALL `%s`(%s)", procName, placeholders)
 	// 使用预处理来避免重复解析 SQL 查询
-	stmt, err := mysql_client.DB.Prepare(query)
+	stmt, err := client.DB.Prepare(query)
 	if err != nil {
 		return fmt.Errorf("failed to prepare query: %v", err)
 	}
@@ -455,7 +452,7 @@ func FindMultipleProc(dest []any, procName string, args ...any) error {
 		if kind == reflect.Slice {
 			sliceElemType = sliceElemType.Elem()
 		}
-		fieldsMapping := mysql_client.getFieldsMapping(sliceElemType)
+		fieldsMapping := client.getFieldsMapping(sliceElemType)
 
 		// 创建扫描目标数组，用于存放每一列的值
 		scanDest := make([]any, len(columns))
@@ -548,11 +545,11 @@ func FindMultipleProc(dest []any, procName string, args ...any) error {
 }
 
 // 执行查询并将结果映射到结构体中，查询一条数据
-func Exec(query string, args ...any) (bool, error) {
-	mysql_client.debugLog(query, args...)
+func (client *MySQLClient) Exec(query string, args ...any) (bool, error) {
+	client.debugLog(query, args...)
 
 	// 使用预处理来避免重复解析 SQL 查询
-	stmt, err := mysql_client.DB.Prepare(query)
+	stmt, err := client.DB.Prepare(query)
 	if err != nil {
 		return false, fmt.Errorf("failed to prepare query: %v", err)
 	}
@@ -578,6 +575,6 @@ func Exec(query string, args ...any) (bool, error) {
 }
 
 // Close 关闭数据库连接
-func Close() error {
-	return mysql_client.DB.Close()
+func (client *MySQLClient) Close() error {
+	return client.DB.Close()
 }
