@@ -403,6 +403,177 @@ func First(dest any, query string, args ...any) (bool, error) {
 	return true, nil
 }
 
+// 执行查询并将单个字段值映射到结构体的字段
+func FirstCol(dest any, query string, args ...any) (bool, error) {
+	mysql_client.debugLog(query, args...)
+
+	// 检查目标参数 dest 是否是指向基础类型的指针
+	destValue := reflect.ValueOf(dest)
+	// 目标类型需要是指向基础类型的指针
+	if destValue.Kind() != reflect.Ptr {
+		return false, fmt.Errorf("dest must be a pointer to a basic type")
+	}
+
+	// 使用预处理来避免重复解析 SQL 查询
+	stmt, err := mysql_client.DB.Prepare(query)
+	if err != nil {
+		return false, fmt.Errorf("failed to prepare query: %v", err)
+	}
+	defer stmt.Close()
+
+	// 执行查询
+	rows, err := stmt.Query(args...)
+	if err != nil {
+		return false, fmt.Errorf("failed to execute query: %v", err)
+	}
+	defer rows.Close()
+
+	// 获取查询结果的列名
+	columns, err := rows.Columns()
+	if err != nil {
+		return false, fmt.Errorf("failed to get columns: %v", err)
+	}
+
+	// 只查询一个字段的值
+	if len(columns) != 1 {
+		return false, fmt.Errorf("expected a single column result, but got %d columns", len(columns))
+	}
+
+	// 获取查询到的值并扫描
+	if rows.Next() {
+		// 创建一个与目标类型匹配的指针
+		var scanDest any
+		switch destValue.Elem().Kind() {
+		case reflect.String:
+			var s string
+			scanDest = &s
+		case reflect.Int:
+			var i int
+			scanDest = &i
+		case reflect.Int64:
+			var i int64
+			scanDest = &i
+		case reflect.Int8:
+			var i int8
+			scanDest = &i
+		case reflect.Uint8:
+			var i uint8
+			scanDest = &i
+		case reflect.Float64:
+			var f float64
+			scanDest = &f
+
+		default:
+			return false, fmt.Errorf("unsupported type: %s", destValue.Elem().Kind())
+		}
+
+		// 执行扫描，将当前行数据扫描到 scanDest 中
+		if err = rows.Scan(scanDest); err != nil {
+			return false, fmt.Errorf("failed to scan column: %v", err)
+		}
+
+		// 将扫描到的值赋值到基础类型指针
+		destValue.Elem().Set(reflect.ValueOf(scanDest).Elem())
+
+	} else {
+		// 如果没有查询到任何数据
+		return false, nil
+	}
+
+	// 检查行迭代中的错误
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("rows iteration error: %v", err)
+	}
+
+	return true, nil
+}
+
+// 执行查询并将单个字段值映射到结构体的字段
+func FirstColProc(dest any, procName string, args ...any) (bool, error) {
+	mysql_client.debugLog(procName, args...)
+
+	// 检查目标参数 dest 是否是指向基础类型的指针
+	destValue := reflect.ValueOf(dest)
+	// 目标类型需要是指向基础类型的指针
+	if destValue.Kind() != reflect.Ptr {
+		return false, fmt.Errorf("dest must be a pointer to a basic type")
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")
+	query := fmt.Sprintf("CALL `%s`(%s)", procName, placeholders)
+	// 使用预处理来避免重复解析 SQL 查询
+	stmt, err := mysql_client.DB.Prepare(query)
+	if err != nil {
+		return false, fmt.Errorf("failed to prepare query: %v", err)
+	}
+	defer stmt.Close()
+
+	// 执行查询
+	rows, err := stmt.Query(args...)
+	if err != nil {
+		return false, fmt.Errorf("failed to execute query: %v", err)
+	}
+	defer rows.Close()
+
+	// 获取查询结果的列名
+	columns, err := rows.Columns()
+	if err != nil {
+		return false, fmt.Errorf("failed to get columns: %v", err)
+	}
+
+	// 只查询一个字段的值
+	if len(columns) != 1 {
+		return false, fmt.Errorf("expected a single column result, but got %d columns", len(columns))
+	}
+
+	// 获取查询到的值并扫描
+	if rows.Next() {
+		// 创建一个与目标类型匹配的指针
+		var scanDest any
+		switch destValue.Elem().Kind() {
+		case reflect.String:
+			var s string
+			scanDest = &s
+		case reflect.Int:
+			var i int
+			scanDest = &i
+		case reflect.Int64:
+			var i int64
+			scanDest = &i
+		case reflect.Int8:
+			var i int8
+			scanDest = &i
+		case reflect.Uint8:
+			var i uint8
+			scanDest = &i
+		case reflect.Float64:
+			var f float64
+			scanDest = &f
+
+		default:
+			return false, fmt.Errorf("unsupported type: %s", destValue.Elem().Kind())
+
+		}
+		// 执行扫描，将当前行数据扫描到 scanDest 中
+		if err = rows.Scan(scanDest); err != nil {
+			return false, fmt.Errorf("failed to scan column: %v", err)
+		}
+
+		// 将扫描到的值赋值到基础类型指针
+		destValue.Elem().Set(reflect.ValueOf(scanDest).Elem())
+
+	} else {
+		// 如果没有查询到任何数据
+		return false, nil
+	}
+
+	// 检查行迭代中的错误
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("rows iteration error: %v", err)
+	}
+
+	return true, nil
+}
+
 func FindMultipleProc(dest []any, procName string, args ...any) error {
 	mysql_client.debugLog(procName, args...)
 

@@ -35,6 +35,15 @@ func (t *MyTime) Scan(value interface{}) error {
 	return nil
 }
 
+type CityInfo struct {
+	Name       string  `db:"city_name"`
+	ID         int     `db:"id"`
+	Latitude   float64 `db:"latitude"`
+	Longitude  float64 `db:"longitude"`
+	WikiDataId string  `db:"wikiDataId"`
+	CreatedAt  MyTime  `json:"create_at" db:"created_at"`
+}
+
 func TestQuery(t *testing.T) {
 	// 创建 MySQL 客户端
 	// 美国时区 America/New_York
@@ -44,14 +53,6 @@ func TestQuery(t *testing.T) {
 	}
 	defer zmysql.Close()
 
-	type CityInfo struct {
-		Name       string  `db:"city_name"`
-		ID         int     `db:"id"`
-		Latitude   float64 `db:"latitude"`
-		Longitude  float64 `db:"longitude"`
-		WikiDataId string  `db:"wikiDataId"`
-		CreatedAt  MyTime  `json:"create_at" db:"created_at"`
-	}
 	// 查询数据
 	var cities []CityInfo
 	err = zmysql.Find(&cities, "SELECT  name as city_name, latitude, longitude,created_at FROM cities WHERE id = ? limit 5", 1)
@@ -65,7 +66,18 @@ func TestQuery(t *testing.T) {
 
 	resByte, _ := json.Marshal(cities)
 	t.Log(string(resByte))
+	t.Log("-----------------\n")
+	var cityList []CityInfo
+	err = findTest(&cityList)
+	if err != nil {
+		log.Fatalf("error querying cities: %v", err)
+	}
+	t.Log("长度", len(cityList))
 
+}
+
+func findTest(dest *[]CityInfo) error {
+	return zmysql.Find(dest, "SELECT  name as city_name, latitude, longitude,created_at FROM cities WHERE id = ? limit 5", 1)
 }
 
 func TestFirst(t *testing.T) {
@@ -160,4 +172,22 @@ func TestUpdate(t *testing.T) {
 	}
 	t.Log(bools)
 
+}
+
+func TestFindCol(t *testing.T) {
+	err := zmysql.Conn("root", "123456", "127.0.0.1:3326", "weather", zmysql.WithDebug())
+	if err != nil {
+		log.Fatalf("failed to create MySQL client: %v", err)
+	}
+	defer zmysql.Close()
+	var cityName string
+	bools, err := zmysql.FirstCol(&cityName, "SELECT  name as city_name FROM cities WHERE id = ? limit 1", 1)
+	if err != nil {
+		log.Fatalf("error querying cities: %v", err)
+	}
+	if bools != true {
+		t.Log("没有数据")
+		return
+	}
+	t.Log(cityName)
 }
