@@ -38,7 +38,7 @@ func (t *MyTime) Scan(value interface{}) error {
 func TestQuery(t *testing.T) {
 	// 创建 MySQL 客户端
 	// 美国时区 America/New_York
-	err := zmysql.NewMySQLClient("root", "123456", "127.0.0.1:3326", "weather", zmysql.WithLoc("America/New_York"), zmysql.WithDebug())
+	err := zmysql.Conn("root", "123456", "127.0.0.1:3326", "weather", zmysql.WithLoc("America/New_York"), zmysql.WithDebug())
 	if err != nil {
 		log.Fatalf("failed to create MySQL client: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestQuery(t *testing.T) {
 
 func TestFirst(t *testing.T) {
 	// 创建 MySQL 客户端
-	err := zmysql.NewMySQLClient("root", "123456", "127.0.0.1:3326", "weather")
+	err := zmysql.Conn("root", "123456", "127.0.0.1:3326", "weather")
 	if err != nil {
 		log.Fatalf("failed to create MySQL client: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestFirst(t *testing.T) {
 
 func TestMySQLClient_FindMultiple(t *testing.T) {
 	// 创建 MySQL 客户端
-	err := zmysql.NewMySQLClient("root", "123456", "127.0.0.1:3326", "weather")
+	err := zmysql.Conn("root", "123456", "127.0.0.1:3326", "weather")
 	if err != nil {
 		log.Fatalf("failed to create MySQL client: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestMySQLClient_FindMultiple(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	// 创建 MySQL 客户端
-	err := zmysql.NewMySQLClient("root", "123456", "127.0.0.1:3326", "weather", zmysql.WithDebug())
+	err := zmysql.Conn("root", "123456", "127.0.0.1:3326", "weather", zmysql.WithDebug())
 	if err != nil {
 		log.Fatalf("failed to create MySQL client: %v", err)
 	}

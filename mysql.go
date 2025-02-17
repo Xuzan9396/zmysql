@@ -31,7 +31,7 @@ type MySQLClient struct {
 var mysql_client *MySQLClient
 
 // 创建并初始化一个新的 MySQL 客户端
-func NewMySQLClient(username, password, addr, dbName string, opts ...func(*MySQLClient)) error {
+func Conn(username, password, addr, dbName string, opts ...func(*MySQLClient)) error {
 
 	// 创建默认的 MySQL 客户端
 	client := &MySQLClient{
@@ -49,9 +49,7 @@ func NewMySQLClient(username, password, addr, dbName string, opts ...func(*MySQL
 	}
 
 	// URL 编码用户名和密码
-	escapedUsername := url.QueryEscape(username)
-	escapedPassword := url.QueryEscape(password)
-	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4&collation=utf8mb4_unicode_ci&parseTime=true&loc=%s", escapedUsername, escapedPassword, addr, dbName, client.loc)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4&collation=utf8mb4_unicode_ci&parseTime=true&loc=%s", username, password, addr, dbName, client.loc)
 
 	// 打开数据库连接
 	db, err := sql.Open("mysql", dsn)

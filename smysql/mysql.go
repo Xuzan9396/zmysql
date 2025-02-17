@@ -29,7 +29,7 @@ type MySQLClient struct {
 }
 
 // 创建并初始化一个新的 MySQL 客户端
-func NewMySQLClient(username, password, addr, dbName string, opts ...func(*MySQLClient)) (*MySQLClient, error) {
+func Conn(username, password, addr, dbName string, opts ...func(*MySQLClient)) (*MySQLClient, error) {
 
 	// 创建默认的 MySQL 客户端
 	client := &MySQLClient{
