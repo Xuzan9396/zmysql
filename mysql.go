@@ -403,6 +403,87 @@ func First(dest any, query string, args ...any) (bool, error) {
 	return true, nil
 }
 
+// 执行查询并将结果映射到结构体中，查询一条数据
+func FirstProc(dest any, procName string, args ...any) (bool, error) {
+	mysql_client.debugLog(procName, args...)
+
+	// 检查目标参数 dest 是否是指向结构体的指针
+	destValue := reflect.ValueOf(dest)
+	// 目标类型需要是指向结构体的指针
+	if destValue.Kind() != reflect.Ptr || destValue.Elem().Kind() != reflect.Struct {
+		return false, fmt.Errorf("dest must be a pointer to a struct")
+	}
+
+	// 获取目标结构体类型
+	structType := destValue.Elem().Type()
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")
+	query := fmt.Sprintf("CALL `%s`(%s)", procName, placeholders)
+	// 使用预处理来避免重复解析 SQL 查询
+	stmt, err := mysql_client.DB.Prepare(query)
+	if err != nil {
+		return false, fmt.Errorf("failed to prepare query: %v", err)
+	}
+	defer stmt.Close()
+
+	// 执行查询
+	rows, err := stmt.Query(args...)
+	if err != nil {
+		return false, fmt.Errorf("failed to execute query: %v", err)
+	}
+	defer rows.Close()
+
+	// 获取查询结果的列名
+	columns, err := rows.Columns()
+	if err != nil {
+		return false, fmt.Errorf("failed to get columns: %v", err)
+	}
+
+	// 获取字段映射缓存（假设有一个缓存用于存储列名与结构体字段索引的映射）
+	fieldsMapping := mysql_client.getFieldsMapping(structType)
+
+	// 创建扫描目标数组，用于存放每一列的值
+	scanDest := make([]any, len(columns))
+	for i := range columns {
+		// 判断字段是否存在映射
+		if fieldIndex, ok := fieldsMapping[columns[i]]; ok {
+			// 获取结构体字段类型
+			fieldType := structType.Field(fieldIndex).Type
+
+			scanDest[i] = reflect.New(fieldType).Interface()
+		}
+	}
+
+	// 只扫描第一行数据
+	if rows.Next() {
+		// 执行扫描，将当前行数据扫描到 scanDest 数组中
+		if err := rows.Scan(scanDest...); err != nil {
+			return false, fmt.Errorf("structure and query fields do not match: %v", err)
+		}
+
+		// 将扫描到的数据填充到结构体字段
+		for i, col := range columns {
+			// 判断列名是否有对应的字段映射
+			if fieldIndex, ok := fieldsMapping[col]; ok {
+				// 获取结构体中对应字段
+				field := reflect.ValueOf(dest).Elem().Field(fieldIndex)
+				// 获取扫描到的值
+				value := reflect.ValueOf(scanDest[i]).Elem()
+				field.Set(value)
+			}
+		}
+	} else {
+		// 如果没有查询到任何记录 ,为false
+		return false, nil
+	}
+
+	// 检查行迭代中的错误
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("rows iteration error: %v", err)
+	}
+
+	return true, nil
+}
+
 // 执行查询并将单个字段值映射到结构体的字段
 func FirstCol(dest any, query string, args ...any) (bool, error) {
 	mysql_client.debugLog(query, args...)
@@ -551,8 +632,8 @@ func FirstColProc(dest any, procName string, args ...any) (bool, error) {
 
 		default:
 			return false, fmt.Errorf("unsupported type: %s", destValue.Elem().Kind())
-
 		}
+
 		// 执行扫描，将当前行数据扫描到 scanDest 中
 		if err = rows.Scan(scanDest); err != nil {
 			return false, fmt.Errorf("failed to scan column: %v", err)
