@@ -97,7 +97,7 @@ func TestFirst(t *testing.T) {
 	}
 	// 查询数据
 	var cities CityInfo
-	bools, err := zmysql.First(&cities, "SELECT  name as city_name, latitude, longitude FROM cities WHERE id = ? limit 1", 1)
+	bools, err := zmysql.First(&cities, "SELECT  name as city_name,flag, latitude, longitude FROM cities WHERE id = ? limit 1", 1)
 	if err != nil {
 		log.Fatalf("error querying cities: %v", err)
 	}
@@ -190,4 +190,52 @@ func TestFindCol(t *testing.T) {
 		return
 	}
 	t.Log(cityName)
+}
+
+func TestExecByte(t *testing.T) {
+	// 创建 MySQL 客户端
+	err := zmysql.Conn("root", "123456", "127.0.0.1:3326", "weather", zmysql.WithLoc("America/New_York"), zmysql.WithDebug())
+	if err != nil {
+		log.Fatalf("failed to create MySQL client: %v", err)
+	}
+	defer zmysql.Close()
+
+	// 查询数据
+	res, err := zmysql.ExecByte("SELECT  name as city_name,state_id, latitude, longitude,created_at FROM cities WHERE id = ? limit 2", zmysql.HAS_LIST, 1)
+	if err != nil {
+		log.Fatalf("error querying cities: %v", err)
+	}
+
+	t.Log(string(res))
+
+	res, err = zmysql.ExecByte("SELECT  name as city_name,state_id, latitude, longitude,created_at FROM cities WHERE id = ? limit 2", zmysql.HAS_ONE, 1)
+	if err != nil {
+		log.Fatalf("error querying cities: %v", err)
+	}
+
+	t.Log(string(res))
+}
+
+func TestProcByte(t *testing.T) {
+	// 创建 MySQL 客户端
+	err := zmysql.Conn("root", "123456", "127.0.0.1:3326", "weather", zmysql.WithLoc("America/New_York"), zmysql.WithDebug())
+	if err != nil {
+		log.Fatalf("failed to create MySQL client: %v", err)
+	}
+	defer zmysql.Close()
+
+	// 查询数据
+	res, err := zmysql.ExecProcByte("Proc_ProcByte", zmysql.HAS_ONE, 2)
+	if err != nil {
+		log.Fatalf("error querying cities: %v", err)
+	}
+
+	t.Log(string(res))
+
+	res, err = zmysql.ExecProcByte("Proc_ProcByte", zmysql.HAS_LIST, 2)
+	if err != nil {
+		log.Fatalf("error querying cities: %v", err)
+	}
+
+	t.Log(string(res))
 }
