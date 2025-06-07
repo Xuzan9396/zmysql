@@ -123,6 +123,8 @@ func TestMySQLClient_FindMultiple(t *testing.T) {
 	type CityInfo struct {
 		Name       string  `db:"name"`
 		ID         int     `db:"id"`
+		Haha       float64 `db:"haha"`
+		Haha2      string  `db:"haha2"`
 		Latitude   float64 `db:"latitude"`
 		Longitude  float64 `db:"longitude"`
 		WikiDataId string  `db:"wikiDataId"`
@@ -143,11 +145,14 @@ func TestMySQLClient_FindMultiple(t *testing.T) {
 		&total,
 		&mings,
 	}, "Proc_FindMultiple")
+	if err != nil {
+		log.Fatalf("error querying cities: %v", err)
+	}
 
 	t.Log("长度", len(cities))
 
 	for i, city := range cities {
-		t.Log(i, city.ID, city.Name, city.WikiDataId == "")
+		t.Log(i, city.ID, city.Name, city.WikiDataId == "", "haha:", city.Haha, "haha2:", city.Haha2)
 	}
 	t.Log(mings.Mingzi, total.Total)
 }
