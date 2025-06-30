@@ -1,8 +1,10 @@
 package zmysql
 
-type IS_LIST_TYPE int8
+import "github.com/Xuzan9396/zmysql/smysql"
+
+type IS_LIST_TYPE = smysql.IS_LIST_TYPE
 
 const (
-	HAS_ONE IS_LIST_TYPE = iota + 1 // 有一个
-	HAS_LIST
+	HAS_ONE = smysql.HAS_ONE // 有一个
+	HAS_LIST = smysql.HAS_LIST
 )

@@ -1,496 +1,113 @@
 package zmysql
 
-import (
-	"database/sql"
-	"fmt"
-	"reflect"
-	"strings"
-)
-
-// createNullScanner 根据字段类型创建对应的Null扫描器，只处理基本类型
-func createNullScanner(fieldType reflect.Type) any {
-	switch fieldType.Kind() {
-	case reflect.String:
-		return &sql.NullString{}
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return &sql.NullInt64{}
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return &sql.NullInt64{}
-	case reflect.Float32, reflect.Float64:
-		return &sql.NullFloat64{}
-	case reflect.Bool:
-		return &sql.NullBool{}
-	default:
-		// 对于自定义类型，使用原有方式
-		return reflect.New(fieldType).Interface()
-	}
-}
-
-// setFieldFromNullScanner 从Null扫描器设置字段值
-func setFieldFromNullScanner(field reflect.Value, scanner any, fieldType reflect.Type) error {
-	switch s := scanner.(type) {
-	case *sql.NullString:
-		if s.Valid {
-			if fieldType.Kind() != reflect.String {
-				return fmt.Errorf("cannot convert string to %s", fieldType.Kind())
-			}
-			field.SetString(s.String)
-		} else {
-			field.SetString("") // NULL设置为空字符串
-		}
-	case *sql.NullInt64:
-		if s.Valid {
-			switch fieldType.Kind() {
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				field.SetInt(s.Int64)
-			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-				if s.Int64 < 0 {
-					return fmt.Errorf("cannot convert negative value to unsigned type")
-				}
-				field.SetUint(uint64(s.Int64))
-			default:
-				return fmt.Errorf("cannot convert int64 to %s", fieldType.Kind())
-			}
-		} else {
-			// NULL设置为0
-			switch fieldType.Kind() {
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				field.SetInt(0)
-			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-				field.SetUint(0)
-			}
-		}
-	case *sql.NullFloat64:
-		if s.Valid {
-			if fieldType.Kind() != reflect.Float32 && fieldType.Kind() != reflect.Float64 {
-				return fmt.Errorf("cannot convert float64 to %s", fieldType.Kind())
-			}
-			field.SetFloat(s.Float64)
-		} else {
-			field.SetFloat(0.0) // NULL设置为0.0
-		}
-	case *sql.NullBool:
-		if s.Valid {
-			if fieldType.Kind() != reflect.Bool {
-				return fmt.Errorf("cannot convert bool to %s", fieldType.Kind())
-			}
-			field.SetBool(s.Bool)
-		} else {
-			field.SetBool(false) // NULL设置为false
-		}
-	default:
-		// 对于自定义类型，使用原有的设置方式
-		value := reflect.ValueOf(scanner).Elem()
-		field.Set(value)
-	}
-	return nil
-}
-
-// 通用的扫描逻辑
-func scanRows(rows *sql.Rows, destValue reflect.Value, sliceElemType reflect.Type) error {
-	columns, err := rows.Columns()
-	if err != nil {
-		return fmt.Errorf("failed to get columns: %v", err)
-	}
-
-	fieldsMapping := mysql_client.getFieldsMapping(sliceElemType)
-	results := reflect.MakeSlice(destValue.Elem().Type(), 0, 0)
-	scanDest := make([]any, len(columns))
-
-	// 为每列创建合适的Null扫描器
-	for i := range columns {
-		if fieldIndex, ok := fieldsMapping[columns[i]]; ok {
-			fieldType := sliceElemType.Field(fieldIndex).Type
-			scanDest[i] = createNullScanner(fieldType)
-		} else {
-			scanDest[i] = &sql.NullString{} // 忽略未定义的字段
-		}
-	}
-
-	for rows.Next() {
-		newItem := reflect.New(sliceElemType).Elem()
-		if err := rows.Scan(scanDest...); err != nil {
-			return fmt.Errorf("failed to scan row: %v", err)
-		}
-
-		for i, col := range columns {
-			if fieldIndex, ok := fieldsMapping[col]; ok {
-				field := newItem.Field(fieldIndex)
-				fieldType := sliceElemType.Field(fieldIndex).Type
-				if err := setFieldFromNullScanner(field, scanDest[i], fieldType); err != nil {
-					return fmt.Errorf("failed to set field %s: %v", col, err)
-				}
-			}
-		}
-		results = reflect.Append(results, newItem)
-	}
-
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("rows iteration error: %v", err)
-	}
-
-	destValue.Elem().Set(results)
-	return nil
-}
+import "github.com/Xuzan9396/zmysql/smysql"
 
 // Find 执行查询并将结果映射到结构体中 列表查询
 func Find(dest any, query string, args ...any) error {
-	mysql_client.debugLog(query, args...)
-	destValue := reflect.ValueOf(dest)
-	if destValue.Kind() != reflect.Ptr || destValue.Elem().Kind() != reflect.Slice {
-		return fmt.Errorf("dest must be a pointer to a slice")
-	}
-
-	sliceElemType := destValue.Elem().Type().Elem()
-	stmt, err := mysql_client.DB.Prepare(query)
-	if err != nil {
-		return fmt.Errorf("failed to prepare query: %v", err)
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.Query(args...)
-	if err != nil {
-		return fmt.Errorf("failed to execute query: %v", err)
-	}
-	defer rows.Close()
-
-	return scanRows(rows, destValue, sliceElemType)
+	return mysql_client.Find(dest, query, args...)
 }
 
 // FindProc 执行存储过程并将结果映射到结构体中 列表查询
 func FindProc(dest any, procName string, args ...any) error {
-	mysql_client.debugLog(procName, args...)
-	destValue := reflect.ValueOf(dest)
-	if destValue.Kind() != reflect.Ptr || destValue.Elem().Kind() != reflect.Slice {
-		return fmt.Errorf("dest must be a pointer to a slice")
-	}
-
-	sliceElemType := destValue.Elem().Type().Elem()
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")
-	query := fmt.Sprintf("CALL `%s`(%s)", procName, placeholders)
-
-	stmt, err := mysql_client.DB.Prepare(query)
-	if err != nil {
-		return fmt.Errorf("failed to prepare query: %v", err)
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.Query(args...)
-	if err != nil {
-		return fmt.Errorf("failed to execute query: %v", err)
-	}
-	defer rows.Close()
-
-	return scanRows(rows, destValue, sliceElemType)
+	return mysql_client.FindProc(dest, procName, args...)
 }
 
 // First 执行查询并将结果映射到结构体中，查询一条数据
 func First(dest any, query string, args ...any) (bool, error) {
-	mysql_client.debugLog(query, args...)
-	destValue := reflect.ValueOf(dest)
-	if destValue.Kind() != reflect.Ptr || destValue.Elem().Kind() != reflect.Struct {
-		return false, fmt.Errorf("dest must be a pointer to a struct")
-	}
-
-	structType := destValue.Elem().Type()
-	stmt, err := mysql_client.DB.Prepare(query)
-	if err != nil {
-		return false, fmt.Errorf("failed to prepare query: %v", err)
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.Query(args...)
-	if err != nil {
-		return false, fmt.Errorf("failed to execute query: %v", err)
-	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return false, fmt.Errorf("failed to get columns: %v", err)
-	}
-
-	fieldsMapping := mysql_client.getFieldsMapping(structType)
-	scanDest := make([]any, len(columns))
-
-	// 为每列创建合适的Null扫描器
-	for i := range columns {
-		if fieldIndex, ok := fieldsMapping[columns[i]]; ok {
-			fieldType := structType.Field(fieldIndex).Type
-			scanDest[i] = createNullScanner(fieldType)
-		} else {
-			scanDest[i] = &sql.NullString{}
-		}
-	}
-
-	if rows.Next() {
-		if err := rows.Scan(scanDest...); err != nil {
-			return false, fmt.Errorf("failed to scan row: %v", err)
-		}
-
-		for i, col := range columns {
-			if fieldIndex, ok := fieldsMapping[col]; ok {
-				field := destValue.Elem().Field(fieldIndex)
-				fieldType := structType.Field(fieldIndex).Type
-				if err := setFieldFromNullScanner(field, scanDest[i], fieldType); err != nil {
-					return false, fmt.Errorf("failed to set field %s: %v", col, err)
-				}
-			}
-		}
-		return true, nil
-	}
-
-	return false, nil
+	return mysql_client.First(dest, query, args...)
 }
 
 // FirstProc 执行存储过程并将结果映射到结构体中，查询一条数据
 func FirstProc(dest any, procName string, args ...any) (bool, error) {
-	mysql_client.debugLog(procName, args...)
-	destValue := reflect.ValueOf(dest)
-	if destValue.Kind() != reflect.Ptr || destValue.Elem().Kind() != reflect.Struct {
-		return false, fmt.Errorf("dest must be a pointer to a struct")
-	}
-
-	structType := destValue.Elem().Type()
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")
-	query := fmt.Sprintf("CALL `%s`(%s)", procName, placeholders)
-
-	stmt, err := mysql_client.DB.Prepare(query)
-	if err != nil {
-		return false, fmt.Errorf("failed to prepare query: %v", err)
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.Query(args...)
-	if err != nil {
-		return false, fmt.Errorf("failed to execute query: %v", err)
-	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return false, fmt.Errorf("failed to get columns: %v", err)
-	}
-
-	fieldsMapping := mysql_client.getFieldsMapping(structType)
-	scanDest := make([]any, len(columns))
-
-	// 为每列创建合适的Null扫描器
-	for i := range columns {
-		if fieldIndex, ok := fieldsMapping[columns[i]]; ok {
-			fieldType := structType.Field(fieldIndex).Type
-			scanDest[i] = createNullScanner(fieldType)
-		} else {
-			scanDest[i] = &sql.NullString{}
-		}
-	}
-
-	if rows.Next() {
-		if err := rows.Scan(scanDest...); err != nil {
-			return false, fmt.Errorf("failed to scan row: %v", err)
-		}
-
-		for i, col := range columns {
-			if fieldIndex, ok := fieldsMapping[col]; ok {
-				field := destValue.Elem().Field(fieldIndex)
-				fieldType := structType.Field(fieldIndex).Type
-				if err := setFieldFromNullScanner(field, scanDest[i], fieldType); err != nil {
-					return false, fmt.Errorf("failed to set field %s: %v", col, err)
-				}
-			}
-		}
-		return true, nil
-	}
-
-	return false, nil
+	return mysql_client.FirstProc(dest, procName, args...)
 }
 
 // FirstCol 执行查询并将单个字段值映射到基础类型
 func FirstCol(dest any, query string, args ...any) (bool, error) {
-	mysql_client.debugLog(query, args...)
-	destValue := reflect.ValueOf(dest)
-	if destValue.Kind() != reflect.Ptr {
-		return false, fmt.Errorf("dest must be a pointer to a basic type")
-	}
-
-	stmt, err := mysql_client.DB.Prepare(query)
-	if err != nil {
-		return false, fmt.Errorf("failed to prepare query: %v", err)
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.Query(args...)
-	if err != nil {
-		return false, fmt.Errorf("failed to execute query: %v", err)
-	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return false, fmt.Errorf("failed to get columns: %v", err)
-	}
-
-	if len(columns) != 1 {
-		return false, fmt.Errorf("expected a single column result, but got %d columns", len(columns))
-	}
-
-	if rows.Next() {
-		// 使用合适的Null扫描器
-		scanner := createNullScanner(destValue.Elem().Type())
-		if err := rows.Scan(scanner); err != nil {
-			return false, fmt.Errorf("failed to scan column: %v", err)
-		}
-
-		// 设置值
-		if err := setFieldFromNullScanner(destValue.Elem(), scanner, destValue.Elem().Type()); err != nil {
-			return false, fmt.Errorf("failed to set value: %v", err)
-		}
-		return true, nil
-	}
-
-	return false, nil
+	return mysql_client.FirstCol(dest, query, args...)
 }
 
 // FirstColProc 执行存储过程并将单个字段值映射到基础类型
 func FirstColProc(dest any, procName string, args ...any) (bool, error) {
-	mysql_client.debugLog(procName, args...)
-	destValue := reflect.ValueOf(dest)
-	if destValue.Kind() != reflect.Ptr {
-		return false, fmt.Errorf("dest must be a pointer to a basic type")
-	}
-
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")
-	query := fmt.Sprintf("CALL `%s`(%s)", procName, placeholders)
-
-	stmt, err := mysql_client.DB.Prepare(query)
-	if err != nil {
-		return false, fmt.Errorf("failed to prepare query: %v", err)
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.Query(args...)
-	if err != nil {
-		return false, fmt.Errorf("failed to execute query: %v", err)
-	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return false, fmt.Errorf("failed to get columns: %v", err)
-	}
-
-	if len(columns) != 1 {
-		return false, fmt.Errorf("expected a single column result, but got %d columns", len(columns))
-	}
-
-	if rows.Next() {
-		// 使用合适的Null扫描器
-		scanner := createNullScanner(destValue.Elem().Type())
-		if err := rows.Scan(scanner); err != nil {
-			return false, fmt.Errorf("failed to scan column: %v", err)
-		}
-
-		// 设置值
-		if err := setFieldFromNullScanner(destValue.Elem(), scanner, destValue.Elem().Type()); err != nil {
-			return false, fmt.Errorf("failed to set value: %v", err)
-		}
-		return true, nil
-	}
-
-	return false, nil
+	return mysql_client.FirstColProc(dest, procName, args...)
 }
 
 // FindMultipleProc 执行存储过程并将多个结果集映射到多个目标结构体或切片中
 func FindMultipleProc(dest []any, procName string, args ...any) error {
-	mysql_client.debugLog(procName, args...)
+	return mysql_client.FindMultipleProc(dest, procName, args...)
+}
 
-	if len(dest) == 0 {
-		return fmt.Errorf("dest cannot be empty")
-	}
+// ExecFindLastId 执行SQL查询并返回LastInsertId
+func ExecFindLastId(query string, args ...any) (int64, error) {
+	return mysql_client.ExecFindLastId(query, args...)
+}
 
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")
-	query := fmt.Sprintf("CALL `%s`(%s)", procName, placeholders)
+// FindArray 执行查询并返回指定字段的泛型数组
+func FindArray[T int64 | string](fieldName string, query string, args ...any) ([]T, error) {
+	return smysql.FindArray[T](mysql_client, fieldName, query, args...)
+}
 
-	stmt, err := mysql_client.DB.Prepare(query)
-	if err != nil {
-		return fmt.Errorf("failed to prepare query: %v", err)
-	}
-	defer stmt.Close()
+// FindArrayInt64 执行查询并返回指定字段的int64数组
+func FindArrayInt64(fieldName string, query string, args ...any) ([]int64, error) {
+	return mysql_client.FindArrayInt64(fieldName, query, args...)
+}
 
-	rows, err := stmt.Query(args...)
-	if err != nil {
-		return fmt.Errorf("failed to execute query: %v", err)
-	}
-	defer rows.Close()
+// FindArrayString 执行查询并返回指定字段的string数组
+func FindArrayString(fieldName string, query string, args ...any) ([]string, error) {
+	return mysql_client.FindArrayString(fieldName, query, args...)
+}
 
-	for index := 0; ; index++ {
-		if index >= len(dest) {
-			return fmt.Errorf("too many result sets, expected %d", len(dest))
-		}
+// FindProcArray 执行存储过程并返回指定字段的泛型数组
+func FindProcArray[T int64 | string](fieldName string, procName string, args ...any) ([]T, error) {
+	return smysql.FindProcArray[T](mysql_client, fieldName, procName, args...)
+}
 
-		destValue := reflect.ValueOf(dest[index])
-		if destValue.Kind() != reflect.Ptr {
-			return fmt.Errorf("dest[%d] must be a pointer", index)
-		}
+// FindProcArrayInt64 执行存储过程并返回指定字段的int64数组
+func FindProcArrayInt64(fieldName string, procName string, args ...any) ([]int64, error) {
+	return mysql_client.FindProcArrayInt64(fieldName, procName, args...)
+}
 
-		kind := destValue.Elem().Kind()
-		if kind != reflect.Slice && kind != reflect.Struct {
-			return fmt.Errorf("dest[%d] must be a pointer to a struct or slice", index)
-		}
+// FindProcArrayString 执行存储过程并返回指定字段的string数组
+func FindProcArrayString(fieldName string, procName string, args ...any) ([]string, error) {
+	return mysql_client.FindProcArrayString(fieldName, procName, args...)
+}
 
-		sliceElemType := destValue.Elem().Type()
-		if kind == reflect.Slice {
-			sliceElemType = sliceElemType.Elem()
-		}
+// FindMap 执行查询并返回泛型键值对映射
+func FindMap[T comparable, Y any](keyField string, valueField string, query string, args ...any) (map[T]Y, error) {
+	return smysql.FindMap[T, Y](mysql_client, keyField, valueField, query, args...)
+}
 
-		if kind == reflect.Slice {
-			// 处理切片类型
-			if err := scanRows(rows, destValue, sliceElemType); err != nil {
-				return fmt.Errorf("failed to scan result set %d: %v", index, err)
-			}
-		} else {
-			// 处理单个结构体类型
-			columns, err := rows.Columns()
-			if err != nil {
-				return fmt.Errorf("failed to get columns: %v", err)
-			}
+// FindProcMap 执行存储过程并返回泛型键值对映射
+func FindProcMap[T comparable, Y any](keyField string, valueField string, procName string, args ...any) (map[T]Y, error) {
+	return smysql.FindProcMap[T, Y](mysql_client, keyField, valueField, procName, args...)
+}
 
-			fieldsMapping := mysql_client.getFieldsMapping(sliceElemType)
-			scanDest := make([]any, len(columns))
+// FirstColAny 执行查询并返回指定类型的单列值（泛型版本）
+func FirstColAny[T int64 | string](query string, args ...any) (T, bool, error) {
+	return smysql.FirstColAny[T](mysql_client, query, args...)
+}
 
-			// 为每列创建合适的Null扫描器
-			for i := range columns {
-				if fieldIndex, ok := fieldsMapping[columns[i]]; ok {
-					fieldType := sliceElemType.Field(fieldIndex).Type
-					scanDest[i] = createNullScanner(fieldType)
-				} else {
-					scanDest[i] = &sql.NullString{}
-				}
-			}
+// FirstColProcAny 执行存储过程并返回指定类型的单列值（泛型版本）
+func FirstColProcAny[T int64 | string](procName string, args ...any) (T, bool, error) {
+	return smysql.FirstColProcAny[T](mysql_client, procName, args...)
+}
 
-			if rows.Next() {
-				if err := rows.Scan(scanDest...); err != nil {
-					return fmt.Errorf("failed to scan row: %v", err)
-				}
+// FirstColInt64 执行查询并返回int64类型的单列值
+func FirstColInt64(query string, args ...any) (int64, bool, error) {
+	return mysql_client.FirstColInt64(query, args...)
+}
 
-				newItem := reflect.New(sliceElemType).Elem()
-				for i, col := range columns {
-					if fieldIndex, ok := fieldsMapping[col]; ok {
-						field := newItem.Field(fieldIndex)
-						fieldType := sliceElemType.Field(fieldIndex).Type
-						if err := setFieldFromNullScanner(field, scanDest[i], fieldType); err != nil {
-							return fmt.Errorf("failed to set field %s: %v", col, err)
-						}
-					}
-				}
-				destValue.Elem().Set(newItem)
-			}
-		}
+// FirstColString 执行查询并返回string类型的单列值
+func FirstColString(query string, args ...any) (string, bool, error) {
+	return mysql_client.FirstColString(query, args...)
+}
 
-		if !rows.NextResultSet() {
-			break
-		}
-	}
+// FirstColProcInt64 执行存储过程并返回int64类型的单列值
+func FirstColProcInt64(procName string, args ...any) (int64, bool, error) {
+	return mysql_client.FirstColProcInt64(procName, args...)
+}
 
-	return nil
+// FirstColProcString 执行存储过程并返回string类型的单列值
+func FirstColProcString(procName string, args ...any) (string, bool, error) {
+	return mysql_client.FirstColProcString(procName, args...)
 }
